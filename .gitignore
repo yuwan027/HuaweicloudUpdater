@@ -1,4 +1,15 @@
 # config file
 config.yaml
 
-# 
+# 编译产物
+dns-updater
+*.exe
+
+# 日志文件
+*.log
+
+# 敏感配置文件
+credentials.csv
+
+# Go 相关
+vendor/

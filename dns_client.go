@@ -6,9 +6,9 @@ import (
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
-	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/region"
 	dns "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/dns/v2"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/dns/v2/model"
+	dnsRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/dns/v2/region"
 )
 
 // DNSClient 华为云DNS客户端
@@ -35,30 +35,27 @@ func NewDNSClient(accessKey, secretKey, regionName string) (*DNSClient, error) {
 		Build()
 
 	// 获取区域信息
-	reg, err := region.SafeValueOf(regionName)
-	if err != nil {
-		return nil, fmt.Errorf("无效的区域: %v", err)
-	}
-
-	// 创建客户端配置
-	hcConfig := config.DefaultConfigBuilder().
-		WithRegion(reg).
-		WithCredential(auth).
-		Build()
+	reg := dnsRegion.ValueOf(regionName)
 
 	// 创建DNS客户端
-	client := dns.NewDnsClient(hcConfig)
+	hcClient := dns.DnsClientBuilder().
+		WithRegion(reg).
+		WithCredential(auth).
+		WithHttpConfig(config.DefaultHttpConfig()).
+		Build()
+
+	client := dns.NewDnsClient(hcClient)
 
 	return &DNSClient{client: client}, nil
 }
 
-// ListRecords 列出指定区域的所有DNS记录
+// ListRecords 列出指定区域的所有DNS记录  
 func (c *DNSClient) ListRecords(zoneID string) ([]DNSRecord, error) {
-	request := &model.ListRecordSetsRequest{
+	request := &model.ListRecordSetsByZoneRequest{
 		ZoneId: zoneID,
 	}
 
-	response, err := c.client.ListRecordSets(request)
+	response, err := c.client.ListRecordSetsByZone(request)
 	if err != nil {
 		return nil, fmt.Errorf("获取DNS记录失败: %v", err)
 	}
@@ -97,8 +94,12 @@ func (c *DNSClient) FindRecord(zoneID, name, recordType string) (*DNSRecord, err
 		return nil, err
 	}
 
+	// 标准化域名，确保统一格式进行比较
+	normalizedName := normalizeDomainName(name)
+
 	for _, record := range records {
-		if record.Name == name && record.Type == recordType {
+		normalizedRecordName := normalizeDomainName(record.Name)
+		if normalizedRecordName == normalizedName && record.Type == recordType {
 			return &record, nil
 		}
 	}
@@ -106,9 +107,24 @@ func (c *DNSClient) FindRecord(zoneID, name, recordType string) (*DNSRecord, err
 	return nil, fmt.Errorf("未找到记录: %s (类型: %s)", name, recordType)
 }
 
+// normalizeDomainName 标准化域名，去掉尾随的点号
+func normalizeDomainName(name string) string {
+	if name == "" {
+		return name
+	}
+	// 去掉尾随的点号
+	if name[len(name)-1] == '.' {
+		return name[:len(name)-1]
+	}
+	return name
+}
+
 // UpdateRecord 更新DNS记录
 func (c *DNSClient) UpdateRecord(zoneID, recordID, newValue string, ttl int32) error {
 	records := []string{newValue}
+	
+	// 添加调试信息
+	log.Printf("准备更新DNS记录 - ZoneID: %s, RecordID: %s, 新值: %s, TTL: %d", zoneID, recordID, newValue, ttl)
 	
 	request := &model.UpdateRecordSetRequest{
 		ZoneId:      zoneID,
@@ -119,11 +135,12 @@ func (c *DNSClient) UpdateRecord(zoneID, recordID, newValue string, ttl int32) e
 		},
 	}
 
-	_, err := c.client.UpdateRecordSet(request)
+	response, err := c.client.UpdateRecordSet(request)
 	if err != nil {
 		return fmt.Errorf("更新DNS记录失败: %v", err)
 	}
-
+	
+	log.Printf("DNS记录更新成功: %+v", response)
 	return nil
 }
 
@@ -136,7 +153,7 @@ func (c *DNSClient) CreateRecord(zoneID, name, recordType, value string, ttl int
 		Body: &model.CreateRecordSetRequestBody{
 			Name:    name,
 			Type:    recordType,
-			Records: &records,
+			Records: records,
 			Ttl:     &ttl,
 		},
 	}
@@ -165,7 +182,35 @@ func (c *DNSClient) UpdateDomainRecord(domain DomainConfig, newIP string) error 
 		return nil
 	}
 
-	// 更新现有记录
+	// 更新现有记录 - 传递记录的原始信息
 	log.Printf("更新域名记录: %s %s -> %s", domain.Name, record.Value, newIP)
-	return c.UpdateRecord(domain.ZoneID, record.ID, newIP, domain.TTL)
+	return c.UpdateRecordWithOriginalInfo(domain.ZoneID, record.ID, record.Name, record.Type, newIP, domain.TTL)
+}
+
+// UpdateRecordWithOriginalInfo 使用完整信息更新DNS记录
+func (c *DNSClient) UpdateRecordWithOriginalInfo(zoneID, recordID, name, recordType, newValue string, ttl int32) error {
+	records := []string{newValue}
+	
+	// 添加调试信息
+	log.Printf("准备更新DNS记录 - ZoneID: %s, RecordID: %s, 名称: %s, 类型: %s, 新值: %s, TTL: %d", 
+		zoneID, recordID, name, recordType, newValue, ttl)
+	
+	request := &model.UpdateRecordSetRequest{
+		ZoneId:      zoneID,
+		RecordsetId: recordID,
+		Body: &model.UpdateRecordSetReq{
+			Name:    name,
+			Type:    recordType,
+			Records: &records,
+			Ttl:     &ttl,
+		},
+	}
+
+	_, err := c.client.UpdateRecordSet(request)
+	if err != nil {
+		return fmt.Errorf("更新DNS记录失败: %v", err)
+	}
+	
+	log.Printf("DNS记录更新成功")
+	return nil
 } 
