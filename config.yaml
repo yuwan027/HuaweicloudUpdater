@@ -1,0 +1,44 @@
+# 华为云DNS定时更新配置文件
+huaweicloud:
+  # 华为云访问密钥
+  access_key: "YOUR_ACCESS_KEY"
+  secret_key: "YOUR_SECRET_KEY"
+  # 华为云区域
+  region: "cn-north-4"
+
+# 域名配置列表
+domains:
+  - name: "example1.com"
+    zone_id: "your_zone_id_1"
+    # 原始IP地址
+    original_ip: "1.1.1.1"
+    # 目标IP地址（切换到的IP）
+    target_ip: "2.2.2.2"
+    # 记录类型
+    record_type: "A"
+    # TTL（生存时间，秒）
+    ttl: 300
+    
+  - name: "example2.com"
+    zone_id: "your_zone_id_2"
+    original_ip: "3.3.3.3"
+    target_ip: "4.4.4.4"
+    record_type: "A"
+    ttl: 300
+
+# 定时任务配置
+schedule:
+  # 切换到目标IP的时间（cron表达式格式）
+  # 示例：每天凌晨2点执行
+  switch_to_target: "0 2 * * *"
+  
+  # 恢复到原始IP的时间（可选，如果为空则不自动恢复）
+  # 示例：每天早上8点执行
+  restore_to_original: "0 8 * * *"
+
+# 日志配置
+logging:
+  # 日志级别: debug, info, warn, error
+  level: "info"
+  # 日志文件路径（可选，如果为空则输出到控制台）
+  file: "dns_updater.log" 
