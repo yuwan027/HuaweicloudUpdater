@@ -5,7 +5,7 @@
 
 set -e
 
-VERSION="v1.0.0"
+VERSION="1.0.0"
 REPO_URL="https://github.com/yuwan027/HuaweicloudUpdater"
 RELEASE_URL="$REPO_URL/releases/download/$VERSION"
 INSTALL_DIR="/opt/huaweicloud-dns-updater"
@@ -13,6 +13,12 @@ BIN_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/huaweicloud-dns-updater"
 LOG_DIR="/var/log/huaweicloud-dns-updater"
 SERVICE_FILE="/etc/systemd/system/huaweicloud-dns-updater.service"
+
+# 检查是否为更新模式
+UPDATE_MODE=""
+if [ "$1" = "--update" ] || [ "$1" = "-u" ]; then
+    UPDATE_MODE="yes"
+fi
 
 echo "🚀 华为云DNS定时更新器自动安装程序"
 echo "📦 版本: $VERSION"
@@ -25,6 +31,49 @@ if [ "$EUID" -ne 0 ]; then
     echo "   sudo ./install.sh"
     exit 1
 fi
+
+# 检查当前安装版本
+check_current_version() {
+    if [ -f "$INSTALL_DIR/dns-updater" ]; then
+        local current_version=$($INSTALL_DIR/dns-updater -version 2>/dev/null | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1 | sed 's/v//')
+        if [ -n "$current_version" ]; then
+            echo "📦 检测到已安装版本: $current_version"
+            if [ "$current_version" = "$VERSION" ]; then
+                if [ "$UPDATE_MODE" != "yes" ]; then
+                    echo "✅ 当前已是最新版本"
+                    echo "💡 如需重新安装，请运行: $0 --update"
+                    exit 0
+                else
+                    echo "🔄 强制更新模式，继续安装..."
+                fi
+            else
+                echo "🆙 发现新版本 $VERSION，当前版本 $current_version"
+                UPDATE_MODE="yes"
+            fi
+        fi
+    fi
+}
+
+# 获取最新版本信息
+get_latest_version() {
+    echo "🔍 检查最新版本..."
+    
+    local api_url="https://api.github.com/repos/yuwan027/HuaweicloudUpdater/releases/latest"
+    local latest_version=""
+    
+    if command -v curl >/dev/null 2>&1; then
+        latest_version=$(curl -s "$api_url" | grep '"tag_name"' | cut -d'"' -f4 | sed 's/v//')
+    elif command -v wget >/dev/null 2>&1; then
+        latest_version=$(wget -qO- "$api_url" | grep '"tag_name"' | cut -d'"' -f4 | sed 's/v//')
+    fi
+    
+    if [ -n "$latest_version" ] && [ "$latest_version" != "$VERSION" ]; then
+        echo "🆕 发现更新版本: $latest_version"
+        echo "💡 更新安装脚本以使用最新版本"
+        VERSION="$latest_version"
+        RELEASE_URL="$REPO_URL/releases/download/$VERSION"
+    fi
+}
 
 # 检测系统架构和平台
 detect_platform() {
@@ -111,6 +160,12 @@ install_binary() {
     echo ""
     echo "📦 安装二进制文件..."
     
+    # 如果是更新模式，先停止服务
+    if [ "$UPDATE_MODE" = "yes" ] && systemctl is-active --quiet huaweicloud-dns-updater; then
+        echo "⏹️  停止现有服务..."
+        systemctl stop huaweicloud-dns-updater
+    fi
+    
     # 安装主程序
     cp "$BINARY_FILE" "$INSTALL_DIR/dns-updater"
     chmod +x "$INSTALL_DIR/dns-updater"
@@ -127,6 +182,14 @@ install_binary() {
 # 创建配置文件
 create_config() {
     echo ""
+    
+    # 如果是更新模式且配置文件已存在，则跳过
+    if [ "$UPDATE_MODE" = "yes" ] && [ -f "$CONFIG_DIR/config.yaml" ]; then
+        echo "⚙️  保留现有配置文件..."
+        echo "✅ 配置文件保留: $CONFIG_DIR/config.yaml"
+        return
+    fi
+    
     echo "⚙️  创建配置文件..."
     
     cat > "$CONFIG_DIR/config.yaml" << 'EOF'
@@ -235,9 +298,12 @@ show_menu() {
     echo "7️⃣  重启服务"
     echo "8️⃣  编辑配置文件"
     echo "9️⃣  测试配置"
+    echo "🔄 s) 立即切换到目标IP"
+    echo "🔙 r) 立即恢复到原始IP"
+    echo "📦 u) 检查更新"
     echo "0️⃣  退出"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -n "请选择操作 [0-9]: "
+    echo -n "请选择操作 [0-9/s/r/u]: "
 }
 
 show_domains() {
@@ -467,6 +533,92 @@ test_config() {
     dns-updater -config "$CONFIG_FILE" -test
 }
 
+switch_to_target() {
+    echo ""
+    echo "🔄 立即切换到目标IP"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "⚠️  这将立即切换所有配置的域名到目标IP地址"
+    echo ""
+    echo -n "确认执行切换操作? [y/N]: "
+    read confirm
+    
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        echo "🔄 正在执行切换..."
+        dns-updater -config "$CONFIG_FILE" -switch
+        echo "✅ 切换操作完成"
+    else
+        echo "❌ 取消切换"
+    fi
+}
+
+restore_to_original() {
+    echo ""
+    echo "🔙 立即恢复到原始IP"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "⚠️  这将立即恢复所有配置的域名到原始IP地址"
+    echo ""
+    echo -n "确认执行恢复操作? [y/N]: "
+    read confirm
+    
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        echo "🔙 正在执行恢复..."
+        dns-updater -config "$CONFIG_FILE" -restore
+        echo "✅ 恢复操作完成"
+    else
+        echo "❌ 取消恢复"
+    fi
+}
+
+check_updates() {
+    echo ""
+    echo "📦 检查更新"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    local current_version=$(dns-updater -version 2>/dev/null | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+    if [ -n "$current_version" ]; then
+        echo "📦 当前版本: $current_version"
+    else
+        echo "❌ 无法获取当前版本"
+        return
+    fi
+    
+    echo "🔍 检查最新版本..."
+    local api_url="https://api.github.com/repos/yuwan027/HuaweicloudUpdater/releases/latest"
+    local latest_version=""
+    
+    if command -v curl >/dev/null 2>&1; then
+        latest_version=$(curl -s "$api_url" | grep '"tag_name"' | cut -d'"' -f4)
+    elif command -v wget >/dev/null 2>&1; then
+        latest_version=$(wget -qO- "$api_url" | grep '"tag_name"' | cut -d'"' -f4)
+    fi
+    
+    if [ -n "$latest_version" ]; then
+        echo "🌐 最新版本: $latest_version"
+        
+        if [ "$current_version" != "$latest_version" ]; then
+            echo ""
+            echo "🆕 发现新版本可用!"
+            echo ""
+            echo -n "是否立即更新? [y/N]: "
+            read confirm
+            
+            if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                echo ""
+                echo "⬇️  正在下载更新..."
+                curl -sSL https://raw.githubusercontent.com/yuwan027/HuaweicloudUpdater/main/install.sh | sudo bash -s -- --update
+            else
+                echo "💡 您可以稍后手动更新:"
+                echo "   curl -sSL https://raw.githubusercontent.com/yuwan027/HuaweicloudUpdater/main/install.sh | sudo bash -s -- --update"
+            fi
+        else
+            echo "✅ 当前已是最新版本"
+        fi
+    else
+        echo "❌ 无法获取最新版本信息"
+        echo "💡 请检查网络连接或手动访问: https://github.com/yuwan027/HuaweicloudUpdater/releases"
+    fi
+}
+
 main() {
     if [ "$EUID" -ne 0 ]; then 
         echo "❌ 请使用 sudo 运行此脚本"
@@ -487,6 +639,9 @@ main() {
             7) restart_service ;;
             8) edit_config ;;
             9) test_config ;;
+            s|S) switch_to_target ;;
+            r|R) restore_to_original ;;
+            u|U) check_updates ;;
             0) echo "👋 再见!"; exit 0 ;;
             *) echo "❌ 无效选择，请重新输入" ;;
         esac
@@ -506,6 +661,10 @@ EOF
 
 # 主安装流程
 main() {
+    # 检查版本和更新
+    check_current_version
+    get_latest_version
+    
     detect_platform
     download_binary
     create_directories
@@ -515,25 +674,47 @@ main() {
     create_manager_script
     
     echo ""
-    echo "🎉 安装完成!"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "📍 安装位置:"
-    echo "   程序目录: $INSTALL_DIR"
-    echo "   配置目录: $CONFIG_DIR"
-    echo "   日志目录: $LOG_DIR"
-    echo ""
-    echo "🔧 下一步操作:"
-    echo "   1. 编辑配置文件: sudo nano $CONFIG_DIR/config.yaml"
-    echo "   2. 配置华为云 AK/SK 和域名信息"
-    echo "   3. 启动服务: sudo systemctl enable --now $SERVICE_NAME"
-    echo "   4. 使用管理工具: sudo dns-manager"
-    echo ""
-    echo "📚 常用命令:"
-    echo "   sudo systemctl status huaweicloud-dns-updater  # 查看服务状态"
-    echo "   sudo dns-manager                               # 启动管理工具"
-    echo "   dns-updater -version                           # 查看版本"
+    if [ "$UPDATE_MODE" = "yes" ]; then
+        echo "🎉 更新完成!"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📦 版本: $VERSION"
+        echo "📍 更新位置:"
+        echo "   程序目录: $INSTALL_DIR"
+        echo "   配置文件: $CONFIG_DIR/config.yaml (已保留)"
+        echo ""
+        echo "🔧 立即启动服务:"
+        echo "   sudo systemctl enable --now huaweicloud-dns-updater.service"
+        echo ""
+        echo "📚 管理命令:"
+        echo "   sudo systemctl status huaweicloud-dns-updater.service  # 查看服务状态"
+        echo "   sudo dns-manager                                       # 启动管理工具"
+        echo "   dns-updater -version                                   # 查看版本"
+        echo "   dns-updater -switch                                    # 立即切换IP"
+        echo "   dns-updater -restore                                   # 立即恢复IP"
+    else
+        echo "🎉 安装完成!"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📍 安装位置:"
+        echo "   程序目录: $INSTALL_DIR"
+        echo "   配置目录: $CONFIG_DIR"
+        echo "   日志目录: $LOG_DIR"
+        echo ""
+        echo "🔧 下一步操作:"
+        echo "   1. 编辑配置文件: sudo nano $CONFIG_DIR/config.yaml"
+        echo "   2. 配置华为云 AK/SK 和域名信息"
+        echo "   3. 启动服务: sudo systemctl enable --now huaweicloud-dns-updater.service"
+        echo "   4. 使用管理工具: sudo dns-manager"
+        echo ""
+        echo "📚 常用命令:"
+        echo "   sudo systemctl status huaweicloud-dns-updater.service  # 查看服务状态"
+        echo "   sudo dns-manager                                       # 启动管理工具"
+        echo "   dns-updater -version                                   # 查看版本"
+        echo "   dns-updater -switch                                    # 立即切换IP"
+        echo "   dns-updater -restore                                   # 立即恢复IP"
+    fi
     echo ""
     echo "🔗 项目地址: $REPO_URL"
+    echo "💡 更新脚本: curl -sSL https://raw.githubusercontent.com/yuwan027/HuaweicloudUpdater/main/install.sh | sudo bash -s -- --update"
 }
 
 main "$@" 

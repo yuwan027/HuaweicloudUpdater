@@ -2,6 +2,7 @@
 
 这是一个基于华为云DNS API的定时域名解析更新工具，支持多域名批量管理，可以定时切换域名解析到不同的IP地址。
 
+> 本项目完全由Cursor生成，基于🧠Claude-4-sonet MAX，README没啥营养建议别看，本人已测试可正常运行。
 ## 功能特性
 
 - ✅ 支持多域名批量管理
@@ -10,11 +11,11 @@
 - ✅ 完整的错误处理和日志记录
 - ✅ 支持手动立即执行切换/恢复操作
 - ✅ 配置文件验证和DNS连接测试
-- ✅ 优雅的服务启停
 - ✅ **自动安装脚本** - 一键安装和配置
 - ✅ **systemd服务保活** - 自动重启和开机启动
 - ✅ **图形化管理工具** - 友好的交互式管理界面
-- ✅ **跨平台支持** - 支持14个平台和架构
+- ✅ **一键更新功能** - 自动检查并更新到最新版本
+- ✅ **命令行工具** - 支持switch/restore快速操作
 
 ## 快速开始 (推荐)
 
@@ -63,35 +64,38 @@ sudo ./install.sh
 7️⃣  重启服务
 8️⃣  编辑配置文件
 9️⃣  测试配置
+🔄 s) 立即切换到目标IP
+🔙 r) 立即恢复到原始IP
+📦 u) 检查更新
 0️⃣  退出
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-请选择操作 [0-9]:
+请选择操作 [0-9/s/r/u]:
 ```
 
 ## 跨平台支持
 
 ### 📦 预编译版本下载
 
-从 [GitHub Releases](https://github.com/yuwan027/HuaweicloudUpdater/releases/tag/v1.0.0) 下载适合您系统的预编译版本：
+从 [GitHub Releases](https://github.com/yuwan027/HuaweicloudUpdater/releases/tag/1.0.0) 下载适合您系统的预编译版本：
 
 #### Linux 系统：
-- **Linux x64**: `dns-updater_v1.0.0_linux_amd64`
-- **Linux ARM64**: `dns-updater_v1.0.0_linux_arm64`
-- **Linux x86**: `dns-updater_v1.0.0_linux_386`
+- **Linux x64**: `dns-updater_1.0.0_linux_amd64`
+- **Linux ARM64**: `dns-updater_1.0.0_linux_arm64`
+- **Linux x86**: `dns-updater_1.0.0_linux_386`
 
 #### Windows 系统：
-- **Windows x64**: `dns-updater_v1.0.0_windows_amd64.exe`
-- **Windows ARM64**: `dns-updater_v1.0.0_windows_arm64.exe`
-- **Windows x86**: `dns-updater_v1.0.0_windows_386.exe`
+- **Windows x64**: `dns-updater_1.0.0_windows_amd64.exe`
+- **Windows ARM64**: `dns-updater_1.0.0_windows_arm64.exe`
+- **Windows x86**: `dns-updater_1.0.0_windows_386.exe`
 
 #### macOS 系统：
-- **macOS Intel**: `dns-updater_v1.0.0_darwin_amd64`
-- **macOS ARM (M系列芯片)**: `dns-updater_v1.0.0_darwin_arm64`
+- **macOS Intel**: `dns-updater_1.0.0_darwin_amd64`
+- **macOS ARM (M系列芯片)**: `dns-updater_1.0.0_darwin_arm64`
 
 #### BSD 系统：
-- **FreeBSD x64/ARM64**: `dns-updater_v1.0.0_freebsd_amd64/arm64`
-- **OpenBSD x64/ARM64**: `dns-updater_v1.0.0_openbsd_amd64/arm64`
-- **NetBSD x64/ARM64**: `dns-updater_v1.0.0_netbsd_amd64/arm64`
+- **FreeBSD x64/ARM64**: `dns-updater_1.0.0_freebsd_amd64/arm64`
+- **OpenBSD x64/ARM64**: `dns-updater_1.0.0_openbsd_amd64/arm64`
+- **NetBSD x64/ARM64**: `dns-updater_1.0.0_netbsd_amd64/arm64`
 
 ### 🔨 从源码编译
 
@@ -131,8 +135,8 @@ chmod +x build-cross.sh
 
 ```bash
 # 1. 下载二进制文件
-wget https://github.com/yuwan027/HuaweicloudUpdater/releases/download/v1.0.0/dns-updater_v1.0.0_linux_amd64
-chmod +x dns-updater_v1.0.0_linux_amd64
+wget https://github.com/yuwan027/HuaweicloudUpdater/releases/download/1.0.0/dns-updater_1.0.0_linux_amd64
+chmod +x dns-updater_1.0.0_linux_amd64
 
 # 2. 创建目录结构
 sudo mkdir -p /opt/huaweicloud-dns-updater
@@ -140,7 +144,7 @@ sudo mkdir -p /etc/huaweicloud-dns-updater
 sudo mkdir -p /var/log/huaweicloud-dns-updater
 
 # 3. 安装程序
-sudo cp dns-updater_v1.0.0_linux_amd64 /opt/huaweicloud-dns-updater/dns-updater
+sudo cp dns-updater_1.0.0_linux_amd64 /opt/huaweicloud-dns-updater/dns-updater
 sudo ln -sf /opt/huaweicloud-dns-updater/dns-updater /usr/local/bin/dns-updater
 ```
 
@@ -261,6 +265,9 @@ sudo dns-manager
 - 🔄 重启服务
 - ✏️ 编辑配置文件
 - 🧪 测试配置
+- 🔄 立即切换到目标IP（s键）
+- 🔙 立即恢复到原始IP（r键）
+- 📦 检查更新（u键）
 
 ### 📋 systemd服务管理
 
@@ -301,6 +308,38 @@ dns-updater -config /etc/huaweicloud-dns-updater/config.yaml -restore
 # 查看定时任务信息
 dns-updater -config /etc/huaweicloud-dns-updater/config.yaml -list
 ```
+
+### 🔄 软件更新
+
+#### 快速更新（推荐）
+
+```bash
+# 使用图形化管理工具更新
+sudo dns-manager  # 选择 "u) 检查更新"
+
+# 或直接使用在线更新脚本
+curl -sSL https://raw.githubusercontent.com/yuwan027/HuaweicloudUpdater/main/install.sh | sudo bash -s -- --update
+
+# 或使用独立的更新脚本
+curl -sSL https://raw.githubusercontent.com/yuwan027/HuaweicloudUpdater/main/update.sh | sudo bash
+```
+
+#### 手动更新
+
+```bash
+# 下载独立更新脚本
+wget https://raw.githubusercontent.com/yuwan027/HuaweicloudUpdater/main/update.sh
+chmod +x update.sh
+sudo ./update.sh
+```
+
+更新功能特点：
+- ✅ 自动检测当前版本
+- ✅ 从GitHub获取最新版本信息
+- ✅ 智能版本比较
+- ✅ 保留现有配置文件
+- ✅ 自动停止和重启服务
+- ✅ 一键强制重新安装
 
 ### 🔧 配置文件管理
 
