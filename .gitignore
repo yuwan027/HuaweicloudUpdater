@@ -2,8 +2,12 @@
 config.yaml
 
 # 编译产物
-dns-updater
+dns-updater*
 *.exe
+*.bin
+build/
+dist/
+releases/
 
 # 日志文件
 *.log
@@ -13,3 +17,7 @@ credentials.csv
 
 # Go 相关
 vendor/
+
+# 跨平台编译产物
+bin/
+output/
